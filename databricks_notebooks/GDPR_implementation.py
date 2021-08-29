@@ -70,7 +70,7 @@ spark.sql('''create table gdpr.raw_customer_data using delta location "/mnt/gdpr
 
 # MAGIC %md
 # MAGIC ### Generating the Cryptographic Key
-# MAGIC 
+# MAGIC > **( If you are running it in the databricks environment, the below steps are not required. The below steps only applicable if you are running it in the local machine)**
 # MAGIC > - Run these below commands in the local environment to setup the key. The key can be generated any system. 
 # MAGIC > - First upgrade the pip to the latest version using the command: python -m pip install --upgrade pip 
 # MAGIC > - pip install fernet
