@@ -177,4 +177,49 @@ encrypted.write.format("delta").mode("overwrite").option("overwriteSchema", "tru
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Decrypt the data
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### using pyspark
+
+# COMMAND ----------
+
+encrypted = spark.sql('''select a.*,e.encryption_key from gdpr.raw_customer_data as a 
+inner join gdpr.encryption_keys as e on e.ID=a.ID''')
+decrypted = encrypted.withColumn("EMAIL", decrypt("EMAIL",(col("encryption_Key")))).drop("encryption_Key")
+display(decrypted.select("ID", "EMAIL","customer_pseudo_id" ))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### using databricks sql
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select a.ID, decrypt_val(a.EMAIL,e.encryption_Key) as email, a.customer_pseudo_id
+# MAGIC from gdpr.raw_customer_data as a 
+# MAGIC inner join gdpr.encryption_keys as e on e.ID=a.ID
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Build the Hive function. 
+# MAGIC > We would like to create a persistant view for the admin, so that they can see the actual email address whenever is required. Databricks function is a session scoped and it does not persist in multiple sessions. Due to that, we need to create a hive function to create the view.
+# MAGIC 
+# MAGIC - you can use vscode to create the hive function. 
+# MAGIC Here is the folder structure 
+# MAGIC ```
+# MAGIC │   build.sbt
+# MAGIC ├───src
+# MAGIC │   └───main
+# MAGIC │       └───scala
+# MAGIC │               decryptUDF.scala
+# MAGIC ```
+# MAGIC 
+# MAGIC - build the scala package with ```sbt package ``` command. 
+# MAGIC - upload the jar into the databricks cluster. 
+# MAGIC - copy the jar path from the cluster It would be needed to register the HIVE function. 
