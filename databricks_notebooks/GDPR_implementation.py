@@ -223,3 +223,72 @@ display(decrypted.select("ID", "EMAIL","customer_pseudo_id" ))
 # MAGIC - build the scala package with ```sbt package ``` command. 
 # MAGIC - upload the jar into the databricks cluster. 
 # MAGIC - copy the jar path from the cluster It would be needed to register the HIVE function. 
+
+# COMMAND ----------
+
+# content of the file : decryptUDF.scala ( It is not required to run it here )
+%scala
+
+import com.macasaet.fernet.{Key, StringValidator, Token}
+import org.apache.hadoop.hive.ql.exec.UDF;
+import java.time.{Duration, Instant}
+class Validator extends StringValidator {
+
+  override def getTimeToLive() : java.time.temporal.TemporalAmount = {
+    Duration.ofSeconds(Instant.MAX.getEpochSecond());
+  }
+}
+
+class udfDecrypt extends UDF {
+
+  def evaluate(inputVal: String, sparkKey : String): String = {
+
+    if( inputVal != null && inputVal!="" ) {
+      val keys: Key = new Key(sparkKey)
+      val token = Token.fromString(inputVal)
+      val validator = new Validator() {}
+      val payload = token.validateAndDecrypt(keys, validator)
+      payload
+    } else return inputVal
+  }
+}
+
+# COMMAND ----------
+
+# content of the file build.sbt ( It is not required to trigger it here)
+
+name := "decryptUDF"
+version := "1.0"
+scalaVersion := "2.12.10"
+libraryDependencies += "org.apache.hive" % "hive-exec" % "0.13.1"
+libraryDependencies += "com.macasaet.fernet" % "fernet-java8" % "1.5.0"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### create the viewes for the normal user and admin user. We will be segregating the access using the ACL
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop function if exists udfPIIDecrypt;
+# MAGIC create function if not exists udfPIIDecrypt as 'udfDecrypt' using jar 'dbfs:/FileStore/jars/be50d23a_6c5f_4f8b_9150_5462f989342e-decryptudf_2_12_1_0-5d7b8.jar' -- the jar file location in the cluster
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC create schema if not exists gdpr_admin;
+# MAGIC drop view if  exists gdpr_admin.Test_Encryption_PII_for_admins_v2;
+# MAGIC create view  gdpr_admin.Test_Encryption_PII_for_admins_v2 as select a.ID, a.NAME_, a.SURNAME, a.NAMESURNAME, a.GENDER, a.BIRTHDATE, udfPIIDecrypt(a.EMAIL, e.encryption_Key) as EMAIL, a.customer_pseudo_id
+# MAGIC from gdpr.raw_customer_data as a 
+# MAGIC inner join gdpr.encryption_keys as e on e.ID=a.ID
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC select * from gdpr_admin.Test_Encryption_PII_for_admins_v2
+
+# COMMAND ----------
+
+
