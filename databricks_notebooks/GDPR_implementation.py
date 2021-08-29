@@ -59,7 +59,7 @@ spark.sql('''create table gdpr.raw_customer_data using delta location "/mnt/gdpr
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC select ID, Email, customer_pseudo_id from gdpr.raw_customer_data
+# MAGIC select ID, Email, customer_pseudo_id from gdpr.raw_customer_data limit 5
 
 # COMMAND ----------
 
@@ -112,7 +112,7 @@ spark.sql('''create table gdpr.encryption_keys using delta location "/mnt/gdpr/d
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from gdpr.encryption_keys
+# MAGIC select * from gdpr.encryption_keys limit 5
 
 # COMMAND ----------
 
@@ -173,7 +173,7 @@ encrypted.write.format("delta").mode("overwrite").option("overwriteSchema", "tru
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC select ID, Email, customer_pseudo_id from gdpr.raw_customer_data
+# MAGIC select ID, Email, customer_pseudo_id from gdpr.raw_customer_data limit 5
 
 # COMMAND ----------
 
@@ -190,7 +190,7 @@ encrypted.write.format("delta").mode("overwrite").option("overwriteSchema", "tru
 encrypted = spark.sql('''select a.*,e.encryption_key from gdpr.raw_customer_data as a 
 inner join gdpr.encryption_keys as e on e.ID=a.ID''')
 decrypted = encrypted.withColumn("EMAIL", decrypt("EMAIL",(col("encryption_Key")))).drop("encryption_Key")
-display(decrypted.select("ID", "EMAIL","customer_pseudo_id" ))
+display(decrypted.select("ID", "EMAIL","customer_pseudo_id" ).limit(5))
 
 # COMMAND ----------
 
@@ -203,6 +203,7 @@ display(decrypted.select("ID", "EMAIL","customer_pseudo_id" ))
 # MAGIC select a.ID, decrypt_val(a.EMAIL,e.encryption_Key) as email, a.customer_pseudo_id
 # MAGIC from gdpr.raw_customer_data as a 
 # MAGIC inner join gdpr.encryption_keys as e on e.ID=a.ID
+# MAGIC limit 5
 
 # COMMAND ----------
 
@@ -223,45 +224,46 @@ display(decrypted.select("ID", "EMAIL","customer_pseudo_id" ))
 # MAGIC - build the scala package with ```sbt package ``` command. 
 # MAGIC - upload the jar into the databricks cluster. 
 # MAGIC - copy the jar path from the cluster It would be needed to register the HIVE function. 
+# MAGIC - Install the maven package fernet for java in the databricks cluster "com.macasaet.fernet:fernet-java8:1.5.0"
 
 # COMMAND ----------
 
 # content of the file : decryptUDF.scala ( It is not required to run it here )
 %scala
 
-import com.macasaet.fernet.{Key, StringValidator, Token}
-import org.apache.hadoop.hive.ql.exec.UDF;
-import java.time.{Duration, Instant}
-class Validator extends StringValidator {
+# import com.macasaet.fernet.{Key, StringValidator, Token}
+# import org.apache.hadoop.hive.ql.exec.UDF;
+# import java.time.{Duration, Instant}
+# class Validator extends StringValidator {
 
-  override def getTimeToLive() : java.time.temporal.TemporalAmount = {
-    Duration.ofSeconds(Instant.MAX.getEpochSecond());
-  }
-}
+#   override def getTimeToLive() : java.time.temporal.TemporalAmount = {
+#     Duration.ofSeconds(Instant.MAX.getEpochSecond());
+#   }
+# }
 
-class udfDecrypt extends UDF {
+# class udfDecrypt extends UDF {
 
-  def evaluate(inputVal: String, sparkKey : String): String = {
+#   def evaluate(inputVal: String, sparkKey : String): String = {
 
-    if( inputVal != null && inputVal!="" ) {
-      val keys: Key = new Key(sparkKey)
-      val token = Token.fromString(inputVal)
-      val validator = new Validator() {}
-      val payload = token.validateAndDecrypt(keys, validator)
-      payload
-    } else return inputVal
-  }
-}
+#     if( inputVal != null && inputVal!="" ) {
+#       val keys: Key = new Key(sparkKey)
+#       val token = Token.fromString(inputVal)
+#       val validator = new Validator() {}
+#       val payload = token.validateAndDecrypt(keys, validator)
+#       payload
+#     } else return inputVal
+#   }
+# }
 
 # COMMAND ----------
 
 # content of the file build.sbt ( It is not required to trigger it here)
 
-name := "decryptUDF"
-version := "1.0"
-scalaVersion := "2.12.10"
-libraryDependencies += "org.apache.hive" % "hive-exec" % "0.13.1"
-libraryDependencies += "com.macasaet.fernet" % "fernet-java8" % "1.5.0"
+# name := "decryptUDF"
+# version := "1.0"
+# scalaVersion := "2.12.10"
+# libraryDependencies += "org.apache.hive" % "hive-exec" % "0.13.1"
+# libraryDependencies += "com.macasaet.fernet" % "fernet-java8" % "1.5.0"
 
 # COMMAND ----------
 
@@ -287,8 +289,32 @@ libraryDependencies += "com.macasaet.fernet" % "fernet-java8" % "1.5.0"
 
 # MAGIC %sql
 # MAGIC 
-# MAGIC select * from gdpr_admin.Test_Encryption_PII_for_admins_v2
+# MAGIC select * from gdpr_admin.Test_Encryption_PII_for_admins_v2 limit 5
 
 # COMMAND ----------
 
-
+# MAGIC %md
+# MAGIC ## (ACL) provide the access control
+# MAGIC 
+# MAGIC We need to first enable Table Access control in the workspace level. This is one of the prerequiste for the Access Control in the databrciks.
+# MAGIC 
+# MAGIC > 2 Personas ( admin, reportinguser)
+# MAGIC 
+# MAGIC > 2 clusters ( devcluster, reportingcluster)
+# MAGIC 
+# MAGIC - **devcluster**: no extra setting. This is used for the development and admins. 
+# MAGIC 
+# MAGIC - **reportingcluster**:
+# MAGIC   - 1) reporting_users databricks group should be created in the databricks.
+# MAGIC   - 2) **spark.databricks.acl.sqlOnly true** has to be set in the databricks config. This setting will restrict the user to run any python or scala code in the cluster. 
+# MAGIC   - 3) add the reporting users in the reporting_users databricks group.
+# MAGIC   - 4) allow the reportinguser group to see only the reportingcluster. 
+# MAGIC   - 5) Grant access to the database or objects to the datanbricks group 
+# MAGIC 
+# MAGIC > If you would like to use  one cluster, but still want to use the Table access control, we need to use the High concurrency cluster for this and then enable the Table access control in the cluster. 
+# MAGIC 
+# MAGIC **Important Links**
+# MAGIC 
+# MAGIC [Table Access Control](https://docs.microsoft.com/en-us/azure/databricks/security/access-control/table-acls/table-acl)
+# MAGIC 
+# MAGIC [Data object privileges](https://docs.microsoft.com/en-us/azure/databricks/security/access-control/table-acls/object-privileges)
