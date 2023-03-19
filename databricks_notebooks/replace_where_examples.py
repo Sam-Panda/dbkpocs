@@ -32,7 +32,13 @@ spark.conf.set("spark.databricks.delta.retentionDurationCheck", False)
 
 # COMMAND ----------
 
-vaccum example with hours
+# MAGIC %sql
+# MAGIC 
+# MAGIC select * from saleslt_address where CountryRegion="India"
+
+# COMMAND ----------
+
+# vaccum example with hours
 df_address = spark.read.csv ("/mnt/salesdata/SalesLT.Address/*", header=True)
 
 from pyspark.sql import functions as F
